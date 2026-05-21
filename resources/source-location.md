@@ -6,10 +6,10 @@
 
 사용자가 별도 경로를 지정하지 않으면 다음 위치를 기본값으로 사용합니다:
 
-- **로컬 경로 (현재):** `~/Desktop/mcp/backend-migration/backend-lol-api-v3_origin`
-- **GitHub URL (향후 교체 예정):** `https://github.com/<org>/backend-lol-api-v3`
+- **GitHub 레포:** `piecomp/backend-lol-api-v3` (private, default branch `main`)
+- **URL:** `https://github.com/piecomp/backend-lol-api-v3`
 
-> 오케스트레이터(Claude CLI)가 사용자의 자연어 요청 ("그냥 고쳐줘", "X 엔드포인트 수정해줘")을 받으면, 위 경로에서 `serverless.ts` / `src/functions/**` 를 읽어 본 MCP의 `analyze_lambda_project` / `convert_handlers` 도구에 텍스트로 전달합니다.
+> 오케스트레이터(Claude CLI)가 사용자의 자연어 요청 ("그냥 고쳐줘", "X 엔드포인트 수정해줘")을 받으면, GitHub MCP로 위 레포에서 `serverless.ts` / `src/functions/**` 를 읽어 본 MCP의 `analyze_lambda_project` / `convert_handlers` 도구에 텍스트로 전달합니다.
 
 ## 대상 (Target — 변환 결과 PR 대상)
 
