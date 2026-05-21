@@ -20,3 +20,5 @@ PORT=5011 npm start
 ## 인증
 
 Claude OAuth만 사용 (SSM Parameter Store에 저장된 `~/.claude/.credentials.json`).
+
+<!-- CI smoke test 1779351908 -->
