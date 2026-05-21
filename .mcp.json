@@ -1,0 +1,9 @@
+{
+  "comment": "이 migration MCP가 outbound로 접속할 외부 MCP. add/commit/push/PR은 GitHub MCP가 담당.",
+  "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/"
+    }
+  }
+}
