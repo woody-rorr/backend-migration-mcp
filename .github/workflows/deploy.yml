@@ -1,0 +1,122 @@
+name: Auto Deploy backend-migration-mcp
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPO: 239460481239.dkr.ecr.us-east-1.amazonaws.com/backend-migration-mcp
+  ECS_CLUSTER: mcp-agents-staging-cluster
+  ECS_SERVICE: backend-migration-mcp-service
+
+jobs:
+  deploy:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version (1.0.X → 1.0.X+1)
+        id: bump
+        run: |
+          OLD=$(node -p "require('./package.json').version")
+          NEW=$(node -e "
+            const v = require('./package.json').version.split('.');
+            v[2] = String(parseInt(v[2], 10) + 1);
+            console.log(v.join('.'));
+          ")
+          node -e "
+            const fs = require('fs');
+            const p = require('./package.json');
+            p.version = '${NEW}';
+            fs.writeFileSync('./package.json', JSON.stringify(p, null, 2) + '\n');
+          "
+          echo "old=$OLD" >> $GITHUB_OUTPUT
+          echo "new=$NEW" >> $GITHUB_OUTPUT
+          echo "branch=release/v$NEW" >> $GITHUB_OUTPUT
+          echo "Bumped: $OLD → $NEW"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push image (tag: latest + v${{ steps.bump.outputs.new }})
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f deploy/Dockerfile \
+            -t ${{ env.ECR_REPO }}:latest \
+            -t ${{ env.ECR_REPO }}:v${{ steps.bump.outputs.new }} \
+            --push .
+
+      - name: Create release branch + PR + auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.bump.outputs.branch }}"
+          NEW="${{ steps.bump.outputs.new }}"
+          OLD="${{ steps.bump.outputs.old }}"
+
+          git checkout -b "$BRANCH"
+          git add package.json
+          git commit -m "chore(release): v$NEW [skip ci]"
+          git push -u origin "$BRANCH"
+
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "release: v$NEW" \
+            --body "Auto-deploy: bump v$OLD → v$NEW. ECR image v$NEW pushed. ECS rolling out.")
+
+          echo "PR: $PR_URL"
+          gh pr merge "$PR_URL" --squash --admin --delete-branch
+
+      - name: Create git tag v${{ steps.bump.outputs.new }}
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull origin main
+          git tag "v${{ steps.bump.outputs.new }}"
+          git push origin "v${{ steps.bump.outputs.new }}"
+
+      - name: Force ECS new deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} > /dev/null
+
+      - name: Wait for service stable
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Health check
+        run: |
+          curl -sS -m 15 http://mcp-agents-staging-alb-249976027.us-east-1.elb.amazonaws.com:5011/health
+          echo " — deployed v${{ steps.bump.outputs.new }}"
