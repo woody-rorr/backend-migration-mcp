@@ -8,8 +8,9 @@
 
 - **GitHub 레포:** `piecomp/backend-lol-api-v3` (private, default branch `main`)
 - **URL:** `https://github.com/piecomp/backend-lol-api-v3`
+- **인증:** 환경변수 `GITHUB_PAT` (컨테이너 entrypoint가 SSM `/backend-migration-mcp/github-source-token`에서 주입). 토큰 값은 코드/문서에 절대 평문 기록 금지.
 
-> 오케스트레이터(Claude CLI)가 사용자의 자연어 요청 ("그냥 고쳐줘", "X 엔드포인트 수정해줘")을 받으면, GitHub MCP로 위 레포에서 `serverless.ts` / `src/functions/**` 를 읽어 본 MCP의 `analyze_lambda_project` / `convert_handlers` 도구에 텍스트로 전달합니다.
+> 오케스트레이터(Claude CLI)가 사용자의 자연어 요청 ("그냥 고쳐줘", "X 엔드포인트 수정해줘")을 받으면, GitHub MCP로 위 레포에서 `serverless.ts` / `src/functions/**` 를 읽어 본 MCP의 `analyze_lambda_project` / `convert_handlers` 도구에 텍스트로 전달합니다. 본 MCP에서 직접 `git clone`이 필요하면 `https://${GITHUB_PAT}@github.com/piecomp/backend-lol-api-v3.git` 형태로 인증.
 
 ## 대상 (Target — 변환 결과 PR 대상)
 
