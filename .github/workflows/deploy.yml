@@ -62,7 +62,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & push image (tag: latest + v${{ steps.bump.outputs.new }})
+      - name: "Build & push image (latest + v${{ steps.bump.outputs.new }})"
         run: |
           docker buildx build \
             --platform linux/amd64 \
