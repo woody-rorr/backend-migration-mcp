@@ -1,0 +1,45 @@
+# API 구현 가이드 (인덱스)
+
+본 디렉토리는 `backend-migration` 레포의 **API 라우터 + 비즈니스 로직** 작성 규칙을 도메인 단위로 정리한 곳입니다. `convert_handlers` / 신규 엔드포인트 추가 시 LLM이 이 문서들을 읽고 코드를 생성합니다.
+
+> ⭐ **재현 원칙**: 도메인별 .md 3종(`overview`/`endpoints`/`business-rules`)만 보고 `src/domains/<domain>/` 를 통째로 다시 생성해도 **API 계약 + 비즈니스 동작이 동일**해야 합니다. 누락된 동작/엣지 케이스 발견 시 코드보다 .md를 먼저 갱신.
+
+## 구조
+
+```
+prompts/api/
+├── README.md                          ← 이 문서 (인덱스)
+├── _shared/                           ← 모든 도메인 공통 규칙
+│   ├── business-logic.md              핸들러/서비스 분리, 트랜잭션 경계
+│   ├── response-format.md             성공/실패 응답 스키마
+│   ├── error-handling.md              에러 분류 + next(err) 위임
+│   ├── validation.md                  req 입력 검증 (zod 권장)
+│   ├── db-access.md                   pool 사용, repository 패턴
+│   ├── auth-context.md                req.user 주입 / 권한 분기
+│   └── transaction.md                 멀티-쿼리 원자성
+└── domains/
+    ├── follow/
+    │   ├── overview.md                도메인 책임 + 데이터 모델 요약
+    │   ├── endpoints.md               엔드포인트 목록 + 스펙
+    │   └── business-rules.md          이 도메인 고유 규칙/제약
+    ├── quiz/      ...
+    ├── sample/    ...
+    └── spark/     ...
+```
+
+## 사용 순서
+
+1. **공통 규칙 먼저 읽기** — `_shared/*.md`는 도메인 무관 절대 규칙
+2. **대상 도메인 폴더 읽기** — `domains/<domain>/overview.md` → `endpoints.md` → `business-rules.md` 순
+3. **변환/생성 규칙은 `prompts/convert_handler.md`** (파일명 컨벤션, Swagger JSDoc, 부팅 안정성)
+
+## 신규 도메인 추가 절차
+
+1. `domains/<new>/` 폴더 생성
+2. `overview.md` / `endpoints.md` / `business-rules.md` 세 파일 작성 (스켈레톤은 기존 도메인 복사)
+3. 동일 PR에서 `backend-migration` 레포의 `src/domains/<new>/{routes,handler}.js` 생성 + `src/server.js`에 mount
+
+## 우선순위 충돌 시
+
+`_shared/` < `domains/<x>/business-rules.md` < `convert_handler.md`의 절대 규칙.
+파일명/디렉토리/import 같은 **부팅 안정성** 규칙은 항상 최상위 우선.

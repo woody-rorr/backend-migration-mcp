@@ -16,11 +16,22 @@ const ROOT = path.resolve(__dirname, "..");
 const PORT = parseInt(process.env.PORT || "5011", 10);
 
 function listMd(dir) {
-  try {
-    return fs.readdirSync(path.join(ROOT, dir))
-      .filter((f) => f.endsWith(".md"))
-      .map((f) => ({ name: f, full: path.join(ROOT, dir, f), uri: `file:///${dir}/${f}` }));
-  } catch { return []; }
+  const base = path.join(ROOT, dir);
+  const out = [];
+  function walk(abs, rel) {
+    let entries;
+    try { entries = fs.readdirSync(abs, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const absChild = path.join(abs, e.name);
+      const relChild = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(absChild, relChild);
+      else if (e.isFile() && e.name.endsWith(".md")) {
+        out.push({ name: relChild, full: absChild, uri: `file:///${dir}/${relChild}` });
+      }
+    }
+  }
+  walk(base, "");
+  return out;
 }
 
 function createServer() {
