@@ -147,6 +147,11 @@ Entity:
 ✅ <domain>.module.ts의 TypeOrmModule.forFeature([...])에 모든 Entity 등록
 ✅ Entity 필드명/타입이 prompts/api/domains/<domain>/overview.md의 컬럼 정의와 일치
 
+ResultCode:
+✅ 본 PR 도메인의 business-rules.md § resultCode 의 모든 코드가 src/common/result-code.ts 에 추가됨
+✅ Service의 BusinessException('CODE', ...) 첫 인자가 result-code.ts 값과 일치
+✅ 기존 코드 (Success, error, validationError + 다른 도메인 코드) 보존됨
+
 DTO:
 ✅ 모든 @Body()/@Query()/@Param() 인자가 DTO 클래스로 받음
 ✅ 옵셔널 필드(?:)에 @IsOptional() 데코레이터 빠뜨림 없음

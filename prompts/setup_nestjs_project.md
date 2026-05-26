@@ -169,7 +169,8 @@ import { typeormConfig } from './config/typeorm.config';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRootAsync(typeormConfig),
-    // 신규 도메인 추가 시 여기에 한 줄: FollowModule, QuizModule, ...
+    // 도메인 Module은 동적으로 수집 — main의 src/domains/* + 본 PR 신규
+    // (도메인 이름 하드코딩 금지. convert_handler.md § R0.1 참조)
   ],
 })
 export class AppModule {}
@@ -199,24 +200,49 @@ export const typeormConfig: TypeOrmModuleAsyncOptions = {
 
 ## 8. `src/common/result-code.ts`
 
+공통 코드 + 도메인별 비즈니스 코드를 한 곳에 모으는 enum.
+
 ```ts
 export const resultCode = {
+  // 공통 (모든 도메인 사용)
   Success: '0000',
   error: '1000',
   validationError: '5000',
-  FollowNotExists: 'FOLLOW_NOT_EXISTS',
-  QuizMatchNotAllowed: 'QUIZ_MATCH_NOT_ALLOWED',
-  QuizCancelNoPick: 'QUIZ_CANCEL_NO_PICK',
-  QuizAlreadyHavePick: 'QUIZ_ALREADY_HAVE_PICK',
-  MatchNotExists: 'MATCH_NOT_EXISTS',
-  PlayerNotExists: 'PLAYER_NOT_EXISTS',
-  TeamNotExists: 'TEAM_NOT_EXISTS',
-  UserNotExists: 'USER_NOT_EXISTS',
-  // ... origin Lambda의 resultCode 그대로 옮김
+
+  // 도메인별 코드는 각 도메인의 business-rules.md § resultCode 매핑 섹션을
+  // 보고 자동 추가 (아래 § R-RC 룰 참조)
 } as const;
 
 export type ResultCode = typeof resultCode[keyof typeof resultCode];
 ```
+
+### R-RC. 도메인별 resultCode 자동 동기화 (절대 규칙)
+
+도메인 마이그레이션 PR이 추가될 때마다 다음을 같이 수행:
+
+1. **출처**: `prompts/api/domains/<domain>/business-rules.md` 의 `resultCode` 매핑 표/섹션
+2. **수집**: 해당 도메인이 throw하는 모든 비즈니스 코드 이름 (예: `FOLLOW_NOT_EXISTS`, `QUIZ_MATCH_NOT_ALLOWED`)
+3. **변환**:
+   - enum 키: PascalCase (`FollowNotExists`)
+   - enum 값: SCREAMING_SNAKE_CASE 문자열 (`'FOLLOW_NOT_EXISTS'`)
+   - 보통 도메인 prefix 유지 (`Follow*`, `Quiz*`)
+4. **추가 위치**: 본 PR의 `src/common/result-code.ts` 같은 객체에 다른 코드와 함께 등록
+5. **중복 차단**: 같은 키가 이미 있으면 추가 안 함 (기존 값 우선)
+
+### 흔히 빠뜨리는 사고
+
+- ❌ 도메인 코드 추가 안 하고 Service에서 `throw new BusinessException('FOLLOW_NOT_EXISTS', ...)` 만 작성
+  → 런타임은 동작하지만 응답에 사용되는 `resultCode.FollowNotExists` 가 undefined → 클라이언트 분기 깨짐
+- ❌ 다른 도메인의 코드를 본 도메인이 throw (예: spark가 `FollowNotExists` throw)
+  → 도메인 경계 위반. 본 도메인의 코드만 throw, 다른 도메인 코드가 필요하면 그 service 호출 후 전파
+- ❌ 코드 이름을 origin Lambda와 다르게 변경
+  → 클라이언트는 origin 코드명으로 분기하므로 그대로 옮길 것
+
+### 자가 점검 (PR 생성 직전)
+
+- [ ] 본 PR이 추가하는 도메인의 `business-rules.md` § resultCode 의 모든 코드가 `result-code.ts` 에 존재
+- [ ] Service의 `throw new BusinessException('CODE', ...)` 의 첫 인자가 `result-code.ts`의 값과 일치
+- [ ] 기존 코드 (Success/error/validationError + 옛 도메인 코드) 보존
 
 ## 9. `src/common/interceptors/transform.interceptor.ts`
 
