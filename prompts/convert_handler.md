@@ -188,19 +188,97 @@ app.use("/<domain>", <domain>Router);
 **과거 사고:**
 - 2026-05-22: `spark.handler.js`가 `@interface/resultCode` 그대로 import → 부팅 실패. 해당 alias는 TS path mapping이라 ESM에서 해석 불가.
 
+### 3-2. 새 파일이 옛 파일을 import 절대 금지 (2026-05-26 사고 룰)
+
+같은 폴더에 옛 `<domain>.handler.js`/`<domain>.router.js`가 남아 있어도 신규 `routes.js`/`handler.js`가 그것을 import하면 안 됩니다.
+
+```js
+// ❌ 절대 금지
+import { ... } from './spark.handler.js';
+import { ... } from './spark.router.js';
+
+// ✅ 허용
+import { ... } from './handler.js';
+```
+
+**자동 적용 알고리즘 (PR 생성 직전 의무)**:
+
+1. 신규로 만들거나 수정한 모든 파일에서 `from\s+['"]\./<filename>['"]` 추출
+2. `<filename>`이 `<domain>.handler.js` / `<domain>.router.js` / `<domain>.Controller.js` 같은 옛 패턴인지 검사
+3. 매칭되면 다음 둘 다 수행:
+   - 옛 파일 본문을 신규 파일명(`handler.js` 등)으로 **rename + 이동**
+   - 옛 파일을 같은 PR에서 **DELETE**
+4. import 경로를 신규 파일명으로 갱신
+
+**과거 사고**: 2026-05-26 — `src/domains/spark/routes.js`가 `./spark.handler.js`를 import. 옛 파일이 path alias(`@interface/resultCode`)를 사용해 ECS 부팅 즉시 `ERR_MODULE_NOT_FOUND`. CI/CD는 ✅, 옛 task가 살아남아 Swagger에는 `sample`만 보임. failedTasks 930회 누적.
+
+### 3-3. Swagger glob 매칭 보장
+
+`backend-migration/src/server.js`의 swagger-jsdoc 설정:
+
+```js
+apis: ["./src/domains/*/routes.js"]
+```
+
+**이 glob에 매칭되지 않는 라우터 파일은 Swagger UI(`/api-docs`)에 절대 노출되지 않습니다.**
+
+자동 적용:
+- 신규 도메인의 라우터 파일명은 반드시 **`routes.js`** (다른 어떤 이름도 금지)
+- 라우터를 분할해서 `routes/auth.js`, `routes/admin.js` 같이 두면 glob 미매칭 — 한 파일에 통합하거나 glob을 수정 (glob 수정은 별도 PR로 의도 분리)
+
+### 3-4. handler.js의 외부 모듈 import는 모두 실재 보장
+
+`handler.js`가 import하는 모든 항목은 같은 PR에 **실재 파일**로 존재해야 합니다.
+
+| 패턴 | 처리 |
+|---|---|
+| `./<Name>.Controller.js`, `./<Name>.Services.js` 등 origin 계열 모듈 | 본문이 마이그레이션 안 됐으면 **stub 동봉 의무** (아래) |
+| `./schemas.js`, `./repository.js` 등 신규 모듈 | 같은 PR에 생성 |
+| `../../middleware/<x>.js`, `../../config/<x>.js` | 없으면 pass-through stub (§ 부팅 안정성 1 참조) |
+| `../../interface/<x>.js`, `../../common/<x>.js` | 없으면 동봉. path alias 사용 금지 |
+
+**Controller/Services stub 표준 형식**:
+
+```js
+// src/domains/<domain>/<Name>.Controller.js
+// TODO: porting origin <Name>.Controller + <Name>.Services
+// 부팅 안정성을 위해 stub만 동봉. 실제 구현은 후속 PR.
+// 응답 포맷: { resultCode, resultMsg, data } — prompts/api/_shared/response-format.md
+// 비즈니스 룰: prompts/api/domains/<domain>/business-rules.md
+
+const notImplemented = (fn) => async () => {
+  const err = new Error(`<Name>.${fn} not implemented yet`);
+  err.code = 'NOT_IMPLEMENTED';
+  throw err;
+};
+
+export const <Name>Ctrl = {
+  // handler.js가 호출하는 메서드만 stub으로 노출
+  someMethod: notImplemented('someMethod'),
+  ...
+};
+```
+
+handler.js의 모든 `<Name>Ctrl.xxx(...)` 호출을 grep해 stub 메서드 목록 자동 생성.
+
 ### 4. PR 전 자가 점검 체크리스트
 
-PR 생성 직전 다음을 모두 확인:
+PR 생성 직전 다음을 **자동 grep으로** 모두 확인:
 
 - [ ] `src/domains/<domain>/routes.js` 파일명 정확 (복수형, 접두/접미 없음)
 - [ ] `src/domains/<domain>/handler.js` 파일명 정확 (단수형)
-- [ ] 각 라우트 위에 `@swagger` JSDoc 블록 존재
-- [ ] 같은 PR의 `src/server.js`에 import + `app.use(...)` 두 줄 추가됨
-- [ ] 라우터가 import하는 미들웨어/유틸의 **파일이 실제 존재**하는지 확인. 없으면 stub 같이 포함
-- [ ] 옛 형식의 라우터 파일(`<domain>.router.js`)이 같이 들어가지 않음
+- [ ] 각 라우트 위에 `@swagger` JSDoc 블록 존재 (`grep -c '@swagger' routes.js >= 라우트 개수`)
+- [ ] 같은 PR의 `src/server.js`에 `import <d>Router from "./domains/<d>/routes.js"` + `app.use("/<d>", <d>Router)` **두 줄 모두** 활성화 (주석 처리된 채로 두지 말 것)
+- [ ] 라우터가 import하는 미들웨어/유틸의 **파일이 실제 존재**. 없으면 stub 같이 포함
+- [ ] 옛 형식 파일(`<domain>.router.js`/`<domain>.handler.js`/`<domain>.Controller.js`)이 같은 폴더에 남아있지 않음 (R3, R3-2)
+- [ ] 신규 파일 어디에도 옛 파일을 import하지 않음 (R3-2 grep)
+- [ ] 신규 파일 어디에도 TS path alias(`@xxx/yyy`) 사용 안 함 (R3-1)
+- [ ] handler.js가 import하는 `<Name>.Controller.js`/`Services.js` 파일이 실재 또는 stub 동봉됨 (R3-4)
+- [ ] swagger-jsdoc glob `./src/domains/*/routes.js` 패턴에 본 PR의 라우터 파일이 매칭됨 (R3-3)
 
-위 6개 중 하나라도 누락되면 ECS task 부팅 실패 또는 Swagger 누락이 발생합니다. 과거 실제 발생한 사고:
+위 항목 중 하나라도 누락되면 ECS task 부팅 실패 또는 Swagger 누락이 발생합니다. 과거 실제 발생한 사고:
 
 - 2026-05-21: `spark.router.js` 파일명 → Swagger 누락
 - 2026-05-22: `entrypoint.sh`의 `node server.js` (실제는 `src/server.js`) → 부팅 실패
 - 2026-05-22: `src/middleware/auth.js` 누락 → `ERR_MODULE_NOT_FOUND` 부팅 실패
+- 2026-05-26: 신규 `spark/routes.js`가 옛 `./spark.handler.js`를 import → 옛 path alias로 부팅 실패. CI/CD ✅, 옛 task 유지, Swagger에 sample만 노출 (failedTasks 930회)
