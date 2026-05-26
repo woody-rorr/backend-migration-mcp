@@ -22,7 +22,7 @@
 
 ## 변환 규칙
 
-- API Gateway path parameter `{matchId}` → Express `:matchId`
+- API Gateway path parameter `{matchId}` → Nest.js `:matchId` (`@Param('matchId') matchId: string`)
 - `method`는 항상 대문자 (GET/POST/PUT/DELETE/PATCH).
 - `auth`는 `authorizer` 또는 `private: true` 존재 여부로 결정. 없으면 `null`.
 - 비-HTTP 이벤트(`schedule`, `sqs`, `s3`, `dynamodb` 등)는 별도 `workers` 배열로 분리.
