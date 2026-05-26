@@ -1,6 +1,6 @@
 {
   "name": "backend-migration-mcp",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Lambda(Serverless) → ECS(Express) code migration MCP server (Claude OAuth via SSM)",
   "type": "module",
   "main": "src/server.js",
