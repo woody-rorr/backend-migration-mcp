@@ -6,6 +6,45 @@
 
 `backend-migration` 레포는 **Nest.js 10+** + TypeScript + `@nestjs/swagger` 기준입니다. 단순 Express가 아닙니다.
 
+## 🟢 R-Origin. 원본 소스 코드 참조 (동적)
+
+본 변환의 원본 Lambda 소스 코드는 **사용자가 매 호출마다 알려주는 GitHub URL** 에 있습니다. URL은 `.md`에 하드코딩하지 않습니다 (프로젝트마다 다르므로).
+
+### Origin URL 결정 우선순위
+
+1. **사용자 메시지에 명시된 GitHub URL** (`https://github.com/<owner>/<repo>` 패턴)
+2. `convert_handlers` tool 호출 시 전달된 `origin_repo_url` 파라미터 (있는 경우)
+3. 둘 다 없으면 **사용자에게 origin URL을 요청**. URL 없이는 본문 변환 불가 — 추측 금지.
+
+### Origin 코드 fetch 방법
+
+URL 확정 후 GitHub MCP outbound 툴(`gh_get_file_contents`)로 다음 경로를 fetch:
+
+```
+<origin_repo>/src/functions/<domain>/        ← 전체 폴더 (가능하면)
+  ├── handler.ts                              ← Lambda 진입점
+  ├── <Domain>.Controller.ts                  ← 도메인 컨트롤러
+  ├── <Domain>.Services.ts                    ← 비즈니스 로직 본문
+  ├── <Domain>.DB.Service.ts (있는 경우)       ← DB 접근
+  ├── entities/                               ← TypeORM 엔티티
+  ├── dto/                                    ← DTO 정의
+  └── index.ts                                ← serverless.ts 라우트 매핑
+```
+
+폴더가 크면 (예: quiz의 `Quiz.Services.ts` 2962줄) 함수별로 분할 fetch.
+
+### 사용 원칙
+
+- `.md` 룰 = "**어떻게 변환**" (Lambda 패턴 → Nest.js 패턴)
+- origin 코드 = "**무엇을 변환**" (실제 비즈니스 로직 본문)
+- LLM은 두 입력을 보면서 한 줄씩 매핑 — 비즈니스 로직 추측/생략 금지
+
+### 절대 금지
+
+- ❌ origin URL 없이 SQL/함수 본문 작성 → 추측에 의존, 정확도 ↓
+- ❌ `.md`에 박힌 API 계약만 보고 비즈니스 로직 새로 작성 → origin과 동작 불일치
+- ❌ origin 함수의 일부 분기/예외 처리 누락 → 운영 사고 가능
+
 ## 🔴 R0. 레포 상태 자동 감지 (PR 생성 직전 의무)
 
 신규 도메인 PR을 만들기 전에 **현재 main 브랜치의 인프라 상태를 자동 점검**하고, Express 잔재가 발견되면 **같은 PR에 인프라 전환을 반드시 포함**합니다. 도메인 코드만 추가하면 컨테이너에서 무시되어 dead code가 됩니다 (2026-05-26 PR #28 사고).
