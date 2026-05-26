@@ -36,17 +36,28 @@ file_contains('Dockerfile', 'CMD ["node", "dist/main.js"]')  → Nest.js 실행
 
 ### R0.1 Express → Nest.js 전환이 같은 PR에 포함되어야 하는 파일들
 
-> ⚠️ **app.module.ts 작성 시 의무**: GitHub API로 main 브랜치의 `src/domains/` 디렉토리를 list → 존재하는 **모든 도메인 폴더**에 대응되는 `<Domain>Module`을 imports에 함께 등록. 신규 도메인만 등록하면 기존 도메인 라우트가 mount 안 되어 404 (2026-05-26 우려 사례).
+> ⚠️ **app.module.ts 작성 시 의무 — 도메인 Module 목록은 동적으로 수집**:
+>
+> 도메인 이름을 .md에 하드코딩하지 않습니다. 다음 절차로 매번 새로 산출:
+>
+> 1. GitHub API로 main 브랜치의 `src/domains/` 를 list
+> 2. 각 서브디렉토리 이름 `<d>` 를 모두 수집 (예: 결과가 `[follow, spark]` 면 두 개)
+> 3. 본 PR이 신규 도메인 `<new>` 를 추가하면 그것도 목록에 더함
+> 4. 각 이름을 PascalCase + `Module` 접미어로 변환 (`follow` → `FollowModule`)
+> 5. 모두 `app.module.ts`의 `imports` 배열에 등록
+>
+> 신규만 등록하고 기존을 빠뜨리면 기존 도메인 라우트가 mount 안 되어 404 (2026-05-26 우려 사례).
 >
 > ```ts
-> // 예: main에 follow/, spark/ 가 있고 신규로 quiz/ 추가하는 PR
+> // app.module.ts — 패턴 (도메인 이름은 동적으로 채워짐)
 > @Module({
 >   imports: [
 >     ConfigModule.forRoot({ isGlobal: true }),
 >     TypeOrmModule.forRootAsync(typeormConfig),
->     FollowModule,    // ← 기존 main의 도메인
->     SparkModule,     // ← 기존 main의 도메인
->     QuizModule,      // ← 본 PR 신규
+>     // ↓ main의 src/domains/* + 본 PR 신규 도메인을 각각 PascalCase + Module 로 나열
+>     // <Existing1>Module,
+>     // <Existing2>Module,
+>     // <New>Module,
 >   ],
 > })
 > export class AppModule {}
@@ -119,8 +130,8 @@ PR 생성 직전 다음을 모두 만족해야 PR 생성:
 ✅ src/main.ts 존재
 ✅ src/app.module.ts 존재 AND <Domain>Module imports에 포함
 ✅ **기존 main의 `src/domains/*/` 에 있는 모든 도메인 Module도 app.module.ts.imports에 포함**
-   (예: 현재 main에 follow/spark 디렉토리가 있으면 FollowModule, SparkModule을 신규 QuizModule과 함께 imports에 등록.
-    누락 시 follow/spark 라우트가 mount 안 되어 404 응답)
+   (도메인 이름은 GitHub API로 main 브랜치 디렉토리 list 결과를 동적으로 수집 — .md에 하드코딩 금지.
+    누락 시 그 도메인 라우트가 mount 안 되어 404 응답)
 ✅ package.json 에 @nestjs/common 의존성 존재
 ✅ Dockerfile|deploy/Dockerfile 의 CMD가 dist/main.js (또는 nest start) 실행
 ✅ src/server.js 부재 (또는 본 PR에서 삭제)
