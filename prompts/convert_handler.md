@@ -6,6 +6,111 @@
 
 `backend-migration` 레포는 **Nest.js 10+** + TypeScript + `@nestjs/swagger` 기준입니다. 단순 Express가 아닙니다.
 
+## 🔴 R0. 레포 상태 자동 감지 (PR 생성 직전 의무)
+
+신규 도메인 PR을 만들기 전에 **현재 main 브랜치의 인프라 상태를 자동 점검**하고, Express 잔재가 발견되면 **같은 PR에 인프라 전환을 반드시 포함**합니다. 도메인 코드만 추가하면 컨테이너에서 무시되어 dead code가 됩니다 (2026-05-26 PR #28 사고).
+
+### 감지 알고리즘
+
+GitHub MCP로 main 브랜치에서 다음 파일/내용을 grep:
+
+```
+file_exists('src/server.js')            → Express 잔재
+file_exists('src/main.ts')              → Nest.js 진입점
+file_contains('package.json', '"@nestjs/common"') → Nest.js 의존성
+file_contains('package.json', '"express"' 단독)  → Express 의존성
+file_exists('src/app.module.ts')        → Nest.js 루트 모듈
+file_exists('nest-cli.json')            → Nest.js 빌드 설정
+file_contains('Dockerfile', 'CMD ["node", "src/server.js"]') → Express 실행
+file_contains('Dockerfile', 'CMD ["node", "dist/main.js"]')  → Nest.js 실행
+```
+
+### 분기 매트릭스
+
+| 상태 | 동작 |
+|---|---|
+| `src/main.ts` + `app.module.ts` + `@nestjs/*` 의존성 모두 존재 | **Nest.js 환경** — 도메인 코드만 추가 (정상 흐름) |
+| `src/server.js` 있고 `src/main.ts` 없음 | **Express 환경 — 같은 PR에 인프라 Nest.js 전환 강제 (§ R0.1)** |
+| 둘 다 없음 (빈 레포) | **`setup_nestjs_project.md` 전체 파일 트리 생성 + 도메인 추가 (§ R0.2)** |
+| 둘 다 있음 | 충돌 — `src/server.js` 삭제 의무 (§ R0.3) |
+
+### R0.1 Express → Nest.js 전환이 같은 PR에 포함되어야 하는 파일들
+
+**삭제**:
+- `src/server.js`
+- `src/middleware/errorHandler.js` (Nest.js의 AllExceptionsFilter로 대체)
+- Express 전용 middleware (`src/middleware/auth.js` 등은 Guard로 대체)
+
+**신규 생성** (`prompts/setup_nestjs_project.md` 참조):
+- `src/main.ts` (Nest.js 진입점)
+- `src/app.module.ts` (루트 모듈, 신규 도메인 Module 포함)
+- `src/config/typeorm.config.ts` (`src/config/db.js` 대체)
+- `src/common/result-code.ts`
+- `src/common/interceptors/transform.interceptor.ts`
+- `src/common/filters/all-exceptions.filter.ts`
+- `src/common/exceptions/business.exception.ts`
+- `src/auth/jwt-auth.guard.ts`
+- `src/auth/current-user.decorator.ts`
+- `nest-cli.json`
+- `tsconfig.json`, `tsconfig.build.json`
+
+**수정**:
+- `package.json` — `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/swagger`, `@nestjs/typeorm`, `@nestjs/config`, `class-validator`, `class-transformer`, `typeorm`, `mysql2`, `reflect-metadata`, `rxjs` 추가. `"scripts.start": "node dist/main.js"`, `"scripts.build": "nest build"` 로 갱신. 옛 express/swagger-ui-express/swagger-jsdoc 제거.
+- `Dockerfile` 또는 `deploy/Dockerfile` — TypeScript 빌드 단계 추가 + `CMD ["node", "dist/main.js"]`:
+  ```dockerfile
+  FROM node:20-alpine AS build
+  WORKDIR /app
+  COPY package.json package-lock.json* ./
+  RUN npm ci
+  COPY . .
+  RUN npm run build
+
+  FROM node:20-alpine
+  WORKDIR /app
+  RUN apk add --no-cache bash jq aws-cli
+  COPY --from=build /app/node_modules ./node_modules
+  COPY --from=build /app/dist ./dist
+  COPY package.json .
+  COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
+  RUN chmod +x /usr/local/bin/entrypoint.sh
+  ENV NODE_ENV=production
+  EXPOSE 5012
+  ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+  CMD ["node", "dist/main.js"]
+  ```
+
+### R0.2 빈 레포 (`src/main.ts`도 `src/server.js`도 없음)
+
+`prompts/setup_nestjs_project.md` 의 § 1~16 전체 파일을 모두 생성. 도메인 코드는 그 위에 얹음. 한 PR에 모두 포함.
+
+### R0.3 충돌 상태 (둘 다 존재)
+
+`src/server.js` + `src/main.ts` 가 같이 있으면 Docker가 어느 쪽을 실행할지 모호 → `src/server.js`와 Express 잔재를 **같은 PR에서 삭제** 의무.
+
+### R0.4 절대 금지
+
+- ❌ Express 환경에 `.controller.ts` 만 추가하고 PR 완료 → 컨테이너에서 dead code (PR #28 사고)
+- ❌ `package.json`에 `@nestjs/*` 추가 없이 `.controller.ts` 작성 → 부팅 실패 또는 무반응
+- ❌ `Dockerfile`의 `CMD` 안 바꾸고 Nest.js 코드 추가 → `node src/server.js` 가 실행되어 Nest.js 부팅 안 됨
+- ❌ `app.module.ts` 없이 `<Domain>Module` 작성 → 라우터 mount 안 됨
+
+### R0.5 PR 자가 점검 (자동 grep)
+
+PR 생성 직전 다음 4개를 모두 만족해야 PR 생성:
+
+```
+✅ src/main.ts 존재
+✅ src/app.module.ts 존재 AND <Domain>Module imports에 포함
+✅ package.json 에 @nestjs/common 의존성 존재
+✅ Dockerfile|deploy/Dockerfile 의 CMD가 dist/main.js (또는 nest start) 실행
+✅ src/server.js 부재 (또는 본 PR에서 삭제)
+```
+
+하나라도 실패 시 PR 거부 + 누락 항목 보강.
+
+---
+
+
 ## 매핑 테이블
 
 | Lambda (APIGatewayProxyEvent) | Nest.js |
