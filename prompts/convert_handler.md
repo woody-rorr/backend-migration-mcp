@@ -36,6 +36,22 @@ file_contains('Dockerfile', 'CMD ["node", "dist/main.js"]')  → Nest.js 실행
 
 ### R0.1 Express → Nest.js 전환이 같은 PR에 포함되어야 하는 파일들
 
+> ⚠️ **app.module.ts 작성 시 의무**: GitHub API로 main 브랜치의 `src/domains/` 디렉토리를 list → 존재하는 **모든 도메인 폴더**에 대응되는 `<Domain>Module`을 imports에 함께 등록. 신규 도메인만 등록하면 기존 도메인 라우트가 mount 안 되어 404 (2026-05-26 우려 사례).
+>
+> ```ts
+> // 예: main에 follow/, spark/ 가 있고 신규로 quiz/ 추가하는 PR
+> @Module({
+>   imports: [
+>     ConfigModule.forRoot({ isGlobal: true }),
+>     TypeOrmModule.forRootAsync(typeormConfig),
+>     FollowModule,    // ← 기존 main의 도메인
+>     SparkModule,     // ← 기존 main의 도메인
+>     QuizModule,      // ← 본 PR 신규
+>   ],
+> })
+> export class AppModule {}
+> ```
+
 **삭제**:
 - `src/server.js`
 - `src/middleware/errorHandler.js` (Nest.js의 AllExceptionsFilter로 대체)
@@ -102,6 +118,9 @@ PR 생성 직전 다음을 모두 만족해야 PR 생성:
 인프라:
 ✅ src/main.ts 존재
 ✅ src/app.module.ts 존재 AND <Domain>Module imports에 포함
+✅ **기존 main의 `src/domains/*/` 에 있는 모든 도메인 Module도 app.module.ts.imports에 포함**
+   (예: 현재 main에 follow/spark 디렉토리가 있으면 FollowModule, SparkModule을 신규 QuizModule과 함께 imports에 등록.
+    누락 시 follow/spark 라우트가 mount 안 되어 404 응답)
 ✅ package.json 에 @nestjs/common 의존성 존재
 ✅ Dockerfile|deploy/Dockerfile 의 CMD가 dist/main.js (또는 nest start) 실행
 ✅ src/server.js 부재 (또는 본 PR에서 삭제)
