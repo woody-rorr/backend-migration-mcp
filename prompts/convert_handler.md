@@ -96,17 +96,41 @@ file_contains('Dockerfile', 'CMD ["node", "dist/main.js"]')  → Nest.js 실행
 
 ### R0.5 PR 자가 점검 (자동 grep)
 
-PR 생성 직전 다음 4개를 모두 만족해야 PR 생성:
+PR 생성 직전 다음을 모두 만족해야 PR 생성:
 
 ```
+인프라:
 ✅ src/main.ts 존재
 ✅ src/app.module.ts 존재 AND <Domain>Module imports에 포함
 ✅ package.json 에 @nestjs/common 의존성 존재
 ✅ Dockerfile|deploy/Dockerfile 의 CMD가 dist/main.js (또는 nest start) 실행
 ✅ src/server.js 부재 (또는 본 PR에서 삭제)
+
+도메인 코드:
+✅ src/domains/<domain>/<domain>.{controller,service,module}.ts 3종 모두 존재
+✅ @Controller('<domain>') decorator path와 디렉토리명 일치
+✅ @ApiTags, @ApiOperation 모든 메서드에 존재
+
+Entity:
+✅ src/domains/<domain>/entities/ 폴더 존재
+✅ Repository가 import하는 모든 Entity 파일이 entities/ 안에 실재
+✅ <domain>.module.ts의 TypeOrmModule.forFeature([...])에 모든 Entity 등록
+✅ Entity 필드명/타입이 prompts/api/domains/<domain>/overview.md의 컬럼 정의와 일치
+
+DTO:
+✅ 모든 @Body()/@Query()/@Param() 인자가 DTO 클래스로 받음
+✅ 옵셔널 필드(?:)에 @IsOptional() 데코레이터 빠뜨림 없음
+✅ query/path string을 number로 받는 필드에 @Type(() => Number) 존재
+✅ 모든 검증 decorator에 한국어 message 옵션
+✅ @ApiProperty / @ApiPropertyOptional 모든 필드에 존재
 ```
 
 하나라도 실패 시 PR 거부 + 누락 항목 보강.
+
+세부 룰은 다음 .md 참조:
+- 인프라/도메인: 본 문서 § R0.1, 파일 구조
+- Entity: `prompts/api/_shared/db-access.md` § Entity 정의
+- DTO: `prompts/api/_shared/validation.md` § DTO 자가 점검 체크리스트
 
 ---
 
