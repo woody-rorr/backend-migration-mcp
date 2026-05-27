@@ -28,13 +28,22 @@ async function buildSystem() {
     "",
     "# 회사 컨텍스트",
   ];
-  for (const dir of ["resources", "prompts"]) {
-    let files = [];
-    try { files = await fs.readdir(path.join(ROOT, dir)); } catch { continue; }
-    for (const f of files.filter((n) => n.endsWith(".md"))) {
-      const text = await fs.readFile(path.join(ROOT, dir, f), "utf8");
-      sections.push(`## ${dir}/${f}`, text, "");
+  async function walk(dir, relParts) {
+    let entries;
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const next = path.join(dir, e.name);
+      const relNext = [...relParts, e.name];
+      if (e.isDirectory()) await walk(next, relNext);
+      else if (e.isFile() && e.name.endsWith(".md")) {
+        const text = await fs.readFile(next, "utf8");
+        sections.push(`## ${relNext.join("/")}`, text, "");
+      }
     }
+  }
+  // migration 도메인만 로드 — new-project는 별도 툴이 사용.
+  for (const sub of ["resources/migration", "prompts/migration"]) {
+    await walk(path.join(ROOT, sub), [sub]);
   }
   _systemCache = sections.join("\n");
   return _systemCache;

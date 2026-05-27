@@ -9,29 +9,42 @@ import { fileURLToPath } from "url";
 import { registerAnalyzeLambdaProject } from "./tools/analyzeLambdaProject.js";
 import { registerConvertHandlers } from "./tools/convertHandlers.js";
 import { registerGenerateDockerAssets } from "./tools/generateDockerAssets.js";
+import { registerScaffoldNewProjectApi } from "./tools/scaffoldNewProjectApi.js";
 import { requestStorage, extractBearer } from "./requestContext.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const PORT = parseInt(process.env.PORT || "5011", 10);
 
-function listMd(dir) {
-  try {
-    return fs.readdirSync(path.join(ROOT, dir))
-      .filter((f) => f.endsWith(".md"))
-      .map((f) => ({ name: f, full: path.join(ROOT, dir, f), uri: `file:///${dir}/${f}` }));
-  } catch { return []; }
+function listMdRecursive(dir) {
+  const out = [];
+  const base = path.join(ROOT, dir);
+  function walk(abs, relParts) {
+    let entries;
+    try { entries = fs.readdirSync(abs, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const next = path.join(abs, e.name);
+      const relNext = [...relParts, e.name];
+      if (e.isDirectory()) walk(next, relNext);
+      else if (e.isFile() && e.name.endsWith(".md")) {
+        const rel = relNext.join("/");
+        out.push({ rel, full: next, uri: `file:///${dir}/${rel}` });
+      }
+    }
+  }
+  walk(base, []);
+  return out;
 }
 
 function createServer() {
-  const server = new McpServer({ name: "backend-migration-mcp", version: "0.1.0" });
+  const server = new McpServer({ name: "backend-migration-mcp", version: "0.2.0" });
 
   for (const dir of ["resources", "prompts"]) {
-    for (const { name, full, uri } of listMd(dir)) {
+    for (const { rel, full, uri } of listMdRecursive(dir)) {
       server.resource(
-        `${dir}/${name}`,
+        `${dir}/${rel}`,
         uri,
-        { description: `${dir} document: ${name}`, mimeType: "text/markdown" },
+        { description: `${dir} document: ${rel}`, mimeType: "text/markdown" },
         async () => ({ contents: [{ uri, mimeType: "text/markdown", text: fs.readFileSync(full, "utf8") }] })
       );
     }
@@ -40,6 +53,7 @@ function createServer() {
   registerAnalyzeLambdaProject(server);
   registerConvertHandlers(server);
   registerGenerateDockerAssets(server);
+  registerScaffoldNewProjectApi(server);
 
   return server;
 }
