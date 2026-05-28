@@ -25,9 +25,11 @@ async function buildSystem() {
     "6. 모든 입력은 DTO + class-validator로 검증. raw body 수신 금지.",
     "7. DB 접근은 04-data-layer.md의 ORM 선택과 네이밍 규약을 따른다 (TBD인 경우 TypeORM 기본).",
     "8. env 변수는 07-env-and-secrets.md 표에 정의된 것만 사용.",
-    "9. .md 문서에 명시되지 않은 엔드포인트/엔티티는 생성하지 않는다. 누락된 정보는 출력 JSON에 'todo' 키로 별도 표기.",
-    "10. add/commit/push/PR은 GitHub MCP가 담당 — 본 툴은 파일 생성만.",
-    "11. 호출 단위 정책(critical): scaffold_module.md §0의 scope 중 정확히 1개만 생성. 여러 scope 요청 시 첫 번째만 만들고 나머지는 todo에 'next: <scope>' 형식으로 기록. 산출 파일 수 10개 초과 금지 — 초과분은 다음 호출로 미룸.",
+    "9. .md 문서 또는 user의 task/extra_spec에 **명시적으로 정의된** 엔드포인트/엔티티만 생성한다. 둘 다에 명세가 없으면 코드를 만들지 말고 빈 files + todo에 'spec required: <엔티티명/모듈명에 대해 무엇이 필요한지>' 형태로 반환한다.",
+    "10. **엔티티/모듈명 추측·placeholder 금지**: `posts`, `items`, `examples`, `things`, `entries`, `records`, `samples` 같은 일반 명사로 fallback 하지 않는다. `module:<name>` scope의 `<name>`은 task/extra_spec에서 호출자가 명시한 도메인 용어 그대로만 사용. 모호하면 생성 거부하고 todo에 'spec required: module name' 기록.",
+    "11. **필드 임의 추가 금지**: 엔티티 필드는 task/extra_spec/도메인 문서에 적힌 것만. 부족하면 생성 거부하고 todo에 'spec required: <엔티티>.fields' 기록.",
+    "12. add/commit/push/PR은 GitHub MCP가 담당 — 본 툴은 파일 생성만.",
+    "13. 호출 단위 정책(critical): scaffold_module.md §0의 scope 중 정확히 1개만 생성. 여러 scope 요청 시 첫 번째만 만들고 나머지는 todo에 'next: <scope>' 형식으로 기록. 산출 파일 수 10개 초과 금지 — 초과분은 다음 호출로 미룸.",
     "",
     "# 출력 예시",
     "{ \"files\": { \"src/main.ts\": \"...\", \"src/app.module.ts\": \"...\", \"src/modules/<feature>/<feature>.controller.ts\": \"...\" }, \"todo\": [\"02-domain-model.md: TBD entity X\"] }",
@@ -61,11 +63,11 @@ export function registerScaffoldNewProjectApi(server) {
     {
       task: z
         .string()
-        .describe("생성/수정할 범위. 예: 'bootstrap skeleton', '<feature> module', 'health controller only'."),
+        .describe("생성/수정할 범위. 예: 'bootstrap', 'app-shell', 'database', 'module:<도메인용어>', 'auth', 'tests:<feature>'. `module:<name>`의 <name>은 호출자가 사용자 발화에서 도출한 도메인 명사(예: news, match). `posts`/`items` 같은 placeholder 금지."),
       extra_spec: z
         .string()
         .optional()
-        .describe("docs에 아직 반영되지 않은 임시 명세(엔티티/엔드포인트 등). 사용 후에는 docs로 승격 필요."),
+        .describe("docs에 아직 반영되지 않은 엔티티/엔드포인트 명세. **`module:<name>` 호출 시 해당 엔티티 필드·관계·엔드포인트가 docs에 TBD이면 여기 필수**. 비면 MCP는 코드 생성 대신 'spec required' todo 반환. 사용 후 docs로 승격할 것."),
       target_paths: z
         .string()
         .optional()
