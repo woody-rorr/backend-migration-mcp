@@ -76,3 +76,17 @@ src/
 - `Dockerfile`: multi-stage (builder → runtime), `node:20-alpine`.
 - 배포 스크립트: `deploy/deploy.sh` (ECR push → ECS service update).
 - entrypoint에서 SSM → env 복원 (`07-env-and-secrets.md` 참조).
+
+## 9. 빌드 정책 — lockfile fallback (Critical)
+- MCP scaffold 산출물에는 `package-lock.json` 이 포함되지 않는다 (MCP 컨테이너가 npm 실행 불가).
+- 따라서 **`Dockerfile` 은 lock 유무에 관계없이 동작해야 한다** → 조건부 fallback 필수.
+  ```dockerfile
+  RUN if [ -f package-lock.json ]; then npm ci; \
+      else npm install --no-audit --no-fund; fi
+  ```
+  builder/runtime 양 스테이지 동일 패턴.
+- **CI 워크플로(`.github/workflows/deploy.yml`)** 도 docker buildx 직전에
+  `setup-node@v4` + `npm install --package-lock-only` 로 lock 부재 시 자동 생성 (이중 안전망).
+- 운영자는 첫 PR 머지 후 가능한 한 빨리 로컬에서 `npm install --package-lock-only` 실행 후
+  `package-lock.json` 을 커밋해 결정적 빌드(`npm ci`)로 전환한다.
+- 관측 사례: 2026-05-28 — fallback 없이 `npm ci` 만 쓰면 scaffold 직후 첫 배포가 exit 1 로 항상 실패.

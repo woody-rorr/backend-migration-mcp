@@ -10,6 +10,7 @@ import { registerAnalyzeLambdaProject } from "./tools/analyzeLambdaProject.js";
 import { registerConvertHandlers } from "./tools/convertHandlers.js";
 import { registerGenerateDockerAssets } from "./tools/generateDockerAssets.js";
 import { registerScaffoldNewProjectApi } from "./tools/scaffoldNewProjectApi.js";
+import { registerExtractDesignIntent } from "./tools/extractDesignIntent.js";
 import { requestStorage, extractBearer } from "./requestContext.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +55,7 @@ function createServer() {
   registerConvertHandlers(server);
   registerGenerateDockerAssets(server);
   registerScaffoldNewProjectApi(server);
+  registerExtractDesignIntent(server);
 
   return server;
 }

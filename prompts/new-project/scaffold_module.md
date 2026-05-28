@@ -10,7 +10,46 @@
 
 | scope | 산출 |
 |---|---|
-| `bootstrap` | package.json, tsconfig.json, tsconfig.build.json, nest-cli.json, .env.example, .gitignore, deploy/Dockerfile |
+| `bootstrap` | package.json, tsconfig.json, tsconfig.build.json, nest-cli.json, .env.example, .gitignore, deploy/Dockerfile, .github/workflows/deploy.yml |
+
+### `bootstrap` 산출 시 필수 규약 (Critical)
+
+MCP 는 `npm` 을 실행할 수 없으므로 **`package-lock.json` 은 산출하지 않는다**. 따라서:
+
+1. **`deploy/Dockerfile`** 의 의존성 설치 단계는 lock 유무에 관계없이 동작해야 한다:
+   ```dockerfile
+   COPY package*.json ./
+   RUN if [ -f package-lock.json ]; then npm ci; \
+       else npm install --no-audit --no-fund; fi
+   ```
+   runtime 스테이지도 같은 패턴 (`npm ci --omit=dev` ↔ `npm install --omit=dev`).
+
+2. **`.github/workflows/deploy.yml`** 은 docker buildx 직전에 lock 부재 시 자동 생성:
+   ```yaml
+   - uses: actions/setup-node@v4
+     with: { node-version: '20' }
+   - name: Generate lockfile if missing
+     run: |
+       if [ ! -f package-lock.json ]; then
+         npm install --package-lock-only --no-audit --no-fund
+       fi
+   ```
+
+운영자가 추후 로컬에서 `npm install` 후 `package-lock.json` 을 커밋하면 두 단계 모두 결정적 빌드(`npm ci`)로 자동 전환된다. 이 fallback 패턴을 빼면 scaffold 직후 첫 배포가 항상 실패한다 (관측 사례: 2026-05-28).
+
+3. **`tsconfig.json`** 은 TypeORM entity 와 호환되도록 `strictPropertyInitialization: false` 를 반드시 포함:
+   ```json
+   {
+     "compilerOptions": {
+       "strict": true,
+       "strictPropertyInitialization": false,
+       "strictNullChecks": true,
+       "noImplicitAny": true,
+       ...
+     }
+   }
+   ```
+   누락 시 entity 필드마다 TS2564 발생 → `nest build` 가 수십 개 에러로 실패 (관측 사례: 2026-05-28, 44 errors).
 | `app-shell` | src/main.ts, src/app.module.ts, src/config/configuration.ts, src/common/{filters,interceptors,decorators}/* |
 | `database` | src/database/data-source.ts, src/database/migrations/<ts>-create-<table>-table.ts (테이블 1개당 1 migration) |
 | `module:<name>` | src/modules/<name>/* (entity, module, service, repository, controller, dto/*) |
