@@ -68,6 +68,13 @@ MCP 는 `npm` 을 실행할 수 없으므로 **`package-lock.json` 은 산출하
 - 누적된 모든 파일을 한 번에 push (단일 파일 push 금지).
 - 응답에 `publish.pr_url` 포함.
 
+### `publish` 안전 게이트 (Critical — 사고 방지)
+publish 호출 시 아래 조건 검사. 위반 시 push 금지하고 `todo: ["abort: <이유>"]` 응답:
+
+1. **부트스트랩만 push 금지**: 누적 files 맵에 `src/modules/<name>/` 경로가 0개이고 부트스트랩 파일(`package.json`, `tsconfig.json`, `nest-cli.json`, `.env.example`, `deploy/Dockerfile`, `.github/workflows/deploy.yml`, `.gitignore`)만 있으면 push abort. `"abort: 모듈 코드 없음. module:<name> scope 먼저 호출"` 응답.
+2. **기존 레포 부트스트랩 덮어쓰기 차단**: target 레포(`woody-rorr/backend`)에 push 전 `mcp__github__get_file_contents`로 `package.json` 존재 여부 확인. 이미 존재하면 누적 files 맵에서 다음 경로 제거 후 push: `package.json`, `tsconfig.json`, `tsconfig.build.json`, `nest-cli.json`, `.env.example`, `.gitignore`, `deploy/Dockerfile`, `deploy/entrypoint.sh`, `.github/workflows/deploy.yml`. (기존 인프라 보존)
+3. **제거 후 push할 파일이 0개**면 abort: `"abort: 신규 추가할 코드 없음 (전부 기존 인프라와 중복)"`.
+
 응답 `todo` 예시:
 ```json
 "todo": [
