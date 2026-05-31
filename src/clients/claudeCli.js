@@ -4,13 +4,40 @@ import { spawn } from "child_process";
 
 const TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS || "180000", 10);
 
-export function runClaude({ system, user, model, cwd, env }) {
+export function runClaude({ system, user, model, cwd, env, enableGithubMcp, userGithubToken }) {
   return new Promise((resolve, reject) => {
     const args = ["-p", user, "--output-format", "json"];
     if (system) args.push("--append-system-prompt", system);
     if (model) args.push("--model", model);
-    args.push("--allowedTools", "");
-    args.push("--mcp-config", JSON.stringify({ mcpServers: {} }));
+    if (enableGithubMcp) {
+      const token = userGithubToken || process.env.GITHUB_PAT;
+      if (!token) {
+        return reject(new Error("github MCP 활성화 요청됐지만 토큰 없음 (userGithubToken/GITHUB_PAT)"));
+      }
+      args.push("--allowedTools", [
+        "mcp__github__create_branch",
+        "mcp__github__push_files",
+        "mcp__github__create_pull_request",
+        "mcp__github__get_file_contents",
+        "mcp__github__list_branches",
+        "mcp__github__list_pull_requests",
+        "mcp__github__list_commits",
+        "mcp__github__get_commit",
+        "mcp__github__update_pull_request_branch",
+      ].join(","));
+      args.push("--mcp-config", JSON.stringify({
+        mcpServers: {
+          github: {
+            type: "http",
+            url: "https://api.githubcopilot.com/mcp/",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        },
+      }));
+    } else {
+      args.push("--allowedTools", "");
+      args.push("--mcp-config", JSON.stringify({ mcpServers: {} }));
+    }
     args.push("--strict-mcp-config");
 
     const child = spawn("claude", args, {

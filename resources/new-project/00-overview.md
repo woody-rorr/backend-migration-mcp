@@ -15,7 +15,7 @@
 
 **Out of scope (Non-goals)**
 - 기존 LoL API 도메인과의 통합 (별도 서비스)
-- 실시간 소켓 (Phase 2에서 `05-realtime.md`로 추가)
+- 실시간 소켓 (Phase 2에서 `09-realtime.md`로 추가, 05는 use-cases가 점유)
 
 ## 3. 용어집
 | 용어 | 정의 |
@@ -29,7 +29,8 @@
 4. `04-data-layer.md` — DB 스키마
 5. `02-domain-model.md` — 엔티티 / 불변식
 6. `03-api-contract.md` — REST 엔드포인트 명세
-7. `06-runtime-rules.md` — guard / interceptor / 에러 / 로깅
+7. `05-use-cases.md` — 유즈케이스 (service 본문 매핑)
+8. `06-runtime-rules.md` — guard / interceptor / 에러 / 로깅
 
 ## 5. 변경 정책
 - **Spec-first**: 코드보다 .md를 먼저 머지.

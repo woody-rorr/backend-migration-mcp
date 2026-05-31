@@ -10,10 +10,11 @@
 4. [04-data-layer.md](./04-data-layer.md) — DB 엔진, 스키마, 마이그레이션
 5. [02-domain-model.md](./02-domain-model.md) — 엔티티, 불변식
 6. [03-api-contract.md](./03-api-contract.md) — REST 엔드포인트
-7. [06-runtime-rules.md](./06-runtime-rules.md) — guard, filter, 로깅
+7. [05-use-cases.md](./05-use-cases.md) — 유즈케이스(비즈니스 로직) 명세 템플릿
+8. [06-runtime-rules.md](./06-runtime-rules.md) — guard, filter, 로깅
 
 ## 추후 추가 예정
-- `05-realtime.md` — WebSocket + Redis Pub/Sub (Phase 2)
+- `09-realtime.md` — WebSocket + Redis Pub/Sub (Phase 2, 원래 05 자리에서 이동)
 
 ## 작성 규칙
 - **Spec-first**: 코드 변경 전 .md 먼저 수정.

@@ -81,7 +81,8 @@ export function registerScaffoldNewProjectApi(server) {
           extra_spec ? `# extra_spec (docs에 아직 없음)\n${extra_spec}` : null,
           target_paths ? `# target_paths\n${target_paths}` : null,
         ].filter(Boolean).join("\n\n");
-        const text = await runClaude({ system, user });
+        const isPublish = /^\s*publish\b/i.test(task || "");
+        const text = await runClaude({ system, user, enableGithubMcp: isPublish });
         return { content: [{ type: "text", text }] };
       } catch (e) {
         return { content: [{ type: "text", text: `Error in scaffold_new_project_api: ${e.message}` }] };
