@@ -63,6 +63,24 @@ function createServer() {
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 
+app.use((req, _res, next) => {
+  if (req.path === "/mcp" && req.method === "POST") {
+    const body = req.body || {};
+    const method = body.method || "?";
+    const toolName = body.params?.name || "";
+    const sessionId = req.headers["mcp-session-id"] || "(new)";
+    console.log(`[mcp] ${method}${toolName ? ` tool=${toolName}` : ""} session=${String(sessionId).slice(0, 8)}`);
+    if (toolName && body.params?.arguments) {
+      const args = body.params.arguments;
+      const summary = Object.entries(args)
+        .map(([k, v]) => `${k}=${typeof v === "string" ? `"${v.slice(0, 80)}"` : JSON.stringify(v).slice(0, 80)}`)
+        .join(" ");
+      console.log(`[mcp]   args: ${summary}`);
+    }
+  }
+  next();
+});
+
 const transports = new Map();
 
 app.post("/mcp", async (req, res) => {

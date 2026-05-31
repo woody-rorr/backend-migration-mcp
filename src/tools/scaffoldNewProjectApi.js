@@ -74,6 +74,9 @@ export function registerScaffoldNewProjectApi(server) {
         .describe("출력 파일 경로 화이트리스트(콤마 구분). 비우면 task 범위에 맞춰 자동 결정."),
     },
     async ({ task, extra_spec, target_paths }) => {
+      const t0 = Date.now();
+      const isPublish = /^\s*publish\b/i.test(task || "");
+      console.log(`[scaffold] start task="${task}" publish=${isPublish} extra_spec_len=${(extra_spec || "").length} target_paths=${target_paths || "-"}`);
       try {
         const system = await buildSystem();
         const user = [
@@ -81,10 +84,13 @@ export function registerScaffoldNewProjectApi(server) {
           extra_spec ? `# extra_spec (docs에 아직 없음)\n${extra_spec}` : null,
           target_paths ? `# target_paths\n${target_paths}` : null,
         ].filter(Boolean).join("\n\n");
-        const isPublish = /^\s*publish\b/i.test(task || "");
         const text = await runClaude({ system, user, enableGithubMcp: isPublish });
+        const ms = Date.now() - t0;
+        const preview = String(text || "").slice(0, 200).replace(/\s+/g, " ");
+        console.log(`[scaffold] done task="${task}" ms=${ms} resp_len=${(text || "").length} preview="${preview}"`);
         return { content: [{ type: "text", text }] };
       } catch (e) {
+        console.error(`[scaffold] error task="${task}" ms=${Date.now() - t0} err=${e.message}`);
         return { content: [{ type: "text", text: `Error in scaffold_new_project_api: ${e.message}` }] };
       }
     }
