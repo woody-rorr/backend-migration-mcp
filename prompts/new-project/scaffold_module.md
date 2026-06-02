@@ -50,18 +50,86 @@ MCP 는 `npm` 을 실행할 수 없으므로 **`package-lock.json` 은 산출하
    }
    ```
    누락 시 entity 필드마다 TS2564 발생 → `nest build` 가 수십 개 에러로 실패 (관측 사례: 2026-05-28, 44 errors).
+
+4. **`package.json` `dependencies` 화이트리스트 (Critical)** — 이후 scope들이 import할 모든 런타임 패키지를 bootstrap 단계에서 빠짐없이 포함한다. 누락되면 후속 scope 머지 후 `nest build`가 TS2307로 실패한다 (관측 사례: 2026-06-01, `@nestjs/jwt` 누락 → CI exit 1, 배포 무산).
+
+   필수(NestJS 10 기본):
+   - `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/config`, `@nestjs/swagger`
+   - `class-validator`, `class-transformer`, `reflect-metadata`, `rxjs`
+
+   조건부 — **하나라도 추후 scope에서 import할 가능성이 보이면 bootstrap에 미리 넣는다**:
+   | 추후 등장하는 scope/패턴 | 동반 dep |
+   |---|---|
+   | `auth` scope (`AuthGuard('jwt')`, `JwtModule`, `JwtService`) | `@nestjs/passport`, `@nestjs/jwt`, `passport`, `passport-jwt`, `bcrypt` + devDep `@types/passport-jwt`, `@types/bcrypt` |
+   | `database` scope (TypeORM) | `@nestjs/typeorm`, `typeorm`, `pg` (또는 `mysql2`) |
+   | env 검증 (`validationSchema`) | `joi` |
+   | rate limit (`ThrottlerModule`) | `@nestjs/throttler` |
+   | uuid 생성 (`uuid` lib 사용 시) | `uuid` + devDep `@types/uuid` |
+
+   **bootstrap scope 응답 직후 LLM은 자체 검증**: 사용자 의도에 `로그인/회원가입/JWT/인증` 키워드가 하나라도 있으면 위 `auth` 행을 무조건 포함. 누락 시 `todo: ["spec-fix: bootstrap에 @nestjs/jwt 등 auth deps 누락 — 재호출 필요"]` 반환.
 | `app-shell` | src/main.ts, src/app.module.ts, src/config/configuration.ts, src/common/{filters,interceptors,decorators}/* |
 | `database` | src/database/data-source.ts, src/database/migrations/<ts>-create-<table>-table.ts (테이블 1개당 1 migration) |
 | `module:<name>` | src/modules/<name>/* (entity, module, service, repository, controller, dto/*) |
 | `auth` | src/modules/auth/* + strategies/* + guards/* (auth_patterns.md 따름) |
 | `tests:<feature>` | src/modules/<feature>/__tests__/*.e2e-spec.ts (08-testing.md 따름) |
 | `health` | src/modules/health/* (단순 모듈 1개) |
+| `modify:<name>` | 기존 모듈 수정 — entity/dto/service 갱신 + 신규 **ALTER 마이그레이션** 추가. 기존 `create-*-table.ts` 수정 금지. 아래 §"`modify:<name>` 산출 규약" 따름. |
+| `delete:<name>` | 모듈 제거 — `src/modules/<name>/` 전체 + `src/app.module.ts` import 라인 제거. 아래 §"`delete:<name>` 산출 규약" 따름. |
 | `publish` | 코드 생성 없음 — 누적 파일을 GitHub MCP로 push + PR. `github_publish.md` 따름. |
 
 ### `module:<name>` 산출 시 필수 규약 (Critical)
 - **반드시 `src/app.module.ts`도 같이 산출** — 신규 모듈을 imports에 포함하도록 전체 파일 덮어쓰기. `app_module_integration.md` §1 골격 사용.
 - "수동으로 app.module.ts에 추가하세요" 같은 안내 문구를 응답에 포함하지 않는다. 응답은 코드 + todo(next scope)만.
 - 호출자가 `accumulated_modules` (콤마 구분 문자열)를 task/extra_spec에 넘기면 그 목록 + 이번 신규 모듈을 합쳐 imports 갱신.
+- **테이블 자동 생성 (Critical, 2026-06-01 사고 방지)** — 신규 모듈에 entity가 있으면 `src/database/migrations/<timestamp>-create-<table>-table.ts`를 **같은 호출 응답에 반드시 포함**한다. 별도 `database` scope를 todo로 미루지 않는다. 누락 시 ECS 부팅 후 첫 API 호출이 `relation "<table>" does not exist` 로 실패.
+  - 마이그레이션 파일 1개 = 테이블 1개. 외래키 제약은 참조 테이블의 마이그레이션 timestamp 이후로 정렬.
+  - `entrypoint.sh` 가 컨테이너 부팅 시 `migration:run:prod` 를 실행하므로 머지 즉시 테이블이 생성된다 (수동 SQL 금지).
+  - 응답에 `app.module.ts` 만 있고 마이그레이션이 없으면 LLM 자체 검증으로 차단: `todo: ["spec-fix: module:<name> 에 entity 있는데 migration 누락 — 재산출 필요"]`.
+
+### `modify:<name>` 산출 규약 (Critical — 필드/엔드포인트 수정)
+
+기존 모듈을 변경하는 요청(필드 추가/삭제/타입 변경, 엔드포인트 추가, 상태머신 확장 등)은 **`module:<name>` 으로 재산출하지 않고 `modify:<name>`** 으로 처리한다. 재산출은 ALTER 가 아닌 새 CREATE 가 돼 운영 DB와 충돌한다 (관측 사례: 2026-06-01 사용자 우려 — "수정 요청 들어오면?").
+
+대상 산출(한 호출 = 한 변경 단위):
+1. **entity 파일 갱신** — `src/modules/<name>/entities/<name>.entity.ts` (변경된 필드/메서드만 반영, 나머지 그대로 유지)
+2. **DTO 갱신** — 영향받는 `dto/*.dto.ts` (예: 새 필드 → `CreateXDto`, `UpdateXDto`)
+3. **service/controller 갱신** — 시그니처 변경이 있을 때만
+4. **신규 ALTER 마이그레이션** — `src/database/migrations/<new-timestamp>-alter-<table>-<짧은_설명>.ts`. **기존 `create-*-table.ts` 절대 수정 금지** (이미 운영 DB에서 run 됐으므로 idempotent 깨짐). 항상 새 파일 추가.
+   - 예: `1780300000000-alter-orders-add-tracking-number.ts` — `up: ALTER TABLE "orders" ADD COLUMN tracking_number ...` / `down: ALTER TABLE "orders" DROP COLUMN tracking_number`
+   - 컬럼 삭제는 항상 `down`에서 같은 컬럼을 `ADD` 로 복원하도록 (롤백 가능).
+5. **테스트 갱신** — `__tests__/<feature>.e2e-spec.ts` 의 영향 케이스 갱신 (선택, `tests:<feature>` scope로 분리 가능).
+
+응답 규약:
+- `files` 맵에 변경된 파일 + 신규 ALTER 마이그레이션 1개.
+- `deletions` 사용 금지 (수정에는 파일 삭제 없음).
+- 호출자(`extra_spec`)는 변경 사항을 **diff 형태로 명시**해야 함. 예: `"OrderEntity에 trackingNumber:varchar(50) nullable 추가. CreateOrderDto에도 동일 필드 옵션 추가."`.
+- 사양이 모호하면 (`"orders 테이블 좀 바꿔줘"` 같이) 코드 생성 금지하고 `todo: ["spec-required: 변경할 필드/엔드포인트를 명시"]`.
+
+위험 변경 가드:
+- 컬럼 타입 변경 (`varchar(255)` → `text` 등): 무손실이면 그대로, 손실 가능성(`text` → `varchar(10)`)이면 `todo: ["risk: 손실 가능 — 사용자 승인 필요"]` 반환 후 대기.
+- 컬럼 삭제 / 테이블 rename: 항상 `todo: ["risk: 파괴적 변경 — 사용자 명시 승인 필요"]` 반환. extra_spec에 `"confirm_destructive: true"` 가 있을 때만 진행.
+
+### `delete:<name>` 산출 규약 (Critical — 절반 삭제 금지)
+
+모듈 제거는 **반드시 한 호출에서 다음을 모두 처리**한다. 일부만 지우면 잔재 파일이 깨진 import를 만들어 `nest build` 실패 (관측 사례: 2026-06-01, `src/modules/news/posts/posts.repository.ts` + `posts.service.ts` 만 남고 `dto/`·`entities/` 삭제 → TS2307 5개, CI exit 1).
+
+산출(=삭제) 대상 묶음 — 빠짐없이 한 PR에 포함:
+1. `src/modules/<name>/<name>.module.ts`
+2. `src/modules/<name>/<name>.controller.ts`
+3. `src/modules/<name>/<name>.service.ts`
+4. `src/modules/<name>/<name>.repository.ts`
+5. `src/modules/<name>/dto/` 디렉토리 전체
+6. `src/modules/<name>/entities/` 디렉토리 전체
+7. `src/modules/<name>/__tests__/` 디렉토리 전체 (존재 시)
+8. `src/database/migrations/*-create-<table>-table.ts` (해당 모듈 전용 테이블이면)
+9. **`src/app.module.ts` 갱신** — 해당 `<Name>Module` import 라인과 `imports: [...]` 등록 라인 제거. 전체 파일을 새 내용으로 덮어쓰기.
+
+응답 규약:
+- `files` 맵에는 갱신된 `src/app.module.ts` 한 개만 (다른 파일들은 삭제 대상이므로 맵에 넣지 않음).
+- 별도 필드 `deletions: ["src/modules/<name>/..."]` 에 위 1~8 경로를 모두 나열한다.
+- `publish` scope가 `deletions` 를 보면 `mcp__github__delete_file` 을 각 경로마다 호출 후 `push_files` 로 `app.module.ts` 갱신.
+
+검증: LLM은 응답 직전 `deletions` 가 `src/modules/<name>/` 하위 파일을 **모두** 포함하는지 확인. 일부만 들어있으면 코드 생성 금지하고 `todo: ["spec-fix: delete:<name> 일부 파일 누락 — 전체 묶음 필요"]` 반환.
 
 ### `publish` scope 산출 규약 (Critical)
 - 코드 생성 금지. `github_publish.md` §2 순서대로 `mcp__github__create_branch` → `push_files` → `create_pull_request` 호출.
