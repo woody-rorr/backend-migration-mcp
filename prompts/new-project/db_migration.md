@@ -10,6 +10,41 @@
   - verb: `create`, `add`, `drop`, `alter`, `rename`, `seed`
 - class 이름: 파일명을 PascalCase로 (`CreateUsersTable1716800000000`).
 
+### 1.1 한 호출에서 여러 migration 파일 생성 시 규칙 (Critical — 위반 시 migration 실패)
+**같은 timestamp 절대 금지**. 한 scaffold 호출에서 N개 migration 파일을 동시 생성할 때는:
+
+1. **단조 증가 timestamp 필수** — 첫 파일 `1716800000000`, 두 번째 `1716800000001`, 세 번째 `1716800000002`, ... 으로 millisecond +1씩 증가.
+2. **FK 의존 순서대로 timestamp 배치** — A 테이블이 B 테이블을 FK로 참조하면, B의 timestamp가 A보다 **작아야** 함. TypeORM은 timestamp 순으로 실행하므로 의존 대상이 먼저 생성돼야 함.
+3. **파일명 + 클래스명 둘 다 동일 timestamp** 사용 (예: `1716800000001-create-events-table.ts` 안 클래스명도 `CreateEventsTable1716800000001`).
+
+**관측 사례 (2026-06-02 PR #30 calendar)**: calendars와 events 둘 다 `1780358400000`로 동일 timestamp → events가 먼저 실행 시도 → calendars 미존재 FK 에러 → migration 전체 실패 → 두 테이블 다 생성 안 됨.
+
+**올바른 예** (calendars → events 관계):
+```
+1780358400000-create-calendars-table.ts   (FK 없음, 먼저)
+1780358400001-create-events-table.ts      (calendars FK 참조, 나중)
+```
+
+**잘못된 예** (위 PR #30 사례):
+```
+1780358400000-create-calendars-table.ts
+1780358400000-create-events-table.ts      ← 같은 timestamp! 실행 순서 비결정적
+```
+
+### 1.2 다중 migration 생성 시 응답 의무
+한 scaffold 호출에서 migration 2개 이상 생성한 경우, 응답 JSON에 **의존 관계 명시**:
+```json
+{
+  "files": { ... },
+  "migration_order": [
+    { "file": "1780358400000-create-calendars-table.ts", "deps": [] },
+    { "file": "1780358400001-create-events-table.ts", "deps": ["calendars"] }
+  ],
+  "todo": [...]
+}
+```
+이 정보로 PR 리뷰어가 timestamp 순서를 검증 가능.
+
 ## 2. 필수 구조 (TypeORM)
 ```ts
 import { MigrationInterface, QueryRunner, Table, TableIndex } from "typeorm";
