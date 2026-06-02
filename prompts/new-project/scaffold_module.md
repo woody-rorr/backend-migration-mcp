@@ -51,6 +51,33 @@ MCP 는 `npm` 을 실행할 수 없으므로 **`package-lock.json` 은 산출하
    ```
    누락 시 entity 필드마다 TS2564 발생 → `nest build` 가 수십 개 에러로 실패 (관측 사례: 2026-05-28, 44 errors).
 
+3.1 **`deploy/Dockerfile` HEALTHCHECK start-period 60s 이상 (Critical)** — migration:run + Nest 부팅 시간 합쳐 충분히 잡아야 새 task가 ALB health check 통과 전에 죽지 않음:
+   ```dockerfile
+   HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+     CMD curl -fsS http://localhost:5013/health || exit 1
+   ```
+   `start-period=20s` 같이 짧으면 → ALB가 task 죽임 → rollout 무한 실패 → 옛 task만 살아서 신규 코드 반영 안 됨 (관측 사례: 2026-06-02 blogs PR #32, 새 task 부팅됐는데 ALB가 kill → /blogs 404).
+
+3.2 **`/health` 엔드포인트는 DB 의존성 X (Critical)** — `HealthController`는 즉시 200 반환만, DB ping 같은 외부 의존성 호출 금지:
+   ```ts
+   @Public()
+   @Get()
+   check() { return { status: 'ok', uptime: process.uptime() }; }
+   ```
+   migration:run 진행 중에도 health check가 빨리 통과해야 ALB가 task 살림. DB readiness는 별도 `/ready` 엔드포인트로 분리 권장 (선택).
+
+3.3 **`.github/workflows/deploy.yml` 에 ECS healthCheckGracePeriodSeconds 120 설정 (Critical)** — Force new deployment 직후 ALB가 task 검사하기 전 grace period 충분히. CI/CD 단계에서 명시:
+   ```yaml
+   - name: Set health check grace period
+     run: |
+       aws ecs update-service \
+         --cluster ${{ env.CLUSTER }} \
+         --service ${{ env.SERVICE }} \
+         --health-check-grace-period-seconds 120 \
+         --region ${{ env.AWS_REGION }} > /dev/null
+   ```
+   기본값 0 또는 60 이면 짧아서 task kill 발생.
+
 4. **`package.json` `dependencies` 화이트리스트 (Critical)** — 이후 scope들이 import할 모든 런타임 패키지를 bootstrap 단계에서 빠짐없이 포함한다. 누락되면 후속 scope 머지 후 `nest build`가 TS2307로 실패한다 (관측 사례: 2026-06-01, `@nestjs/jwt` 누락 → CI exit 1, 배포 무산).
 
    필수(NestJS 10 기본):
