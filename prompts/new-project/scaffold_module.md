@@ -112,6 +112,23 @@ MCP 는 `npm` 을 실행할 수 없으므로 **`package-lock.json` 은 산출하
   - 마이그레이션 파일 1개 = 테이블 1개. 외래키 제약은 참조 테이블의 마이그레이션 timestamp 이후로 정렬.
   - `entrypoint.sh` 가 컨테이너 부팅 시 `migration:run:prod` 를 실행하므로 머지 즉시 테이블이 생성된다 (수동 SQL 금지).
   - 응답에 `app.module.ts` 만 있고 마이그레이션이 없으면 LLM 자체 검증으로 차단: `todo: ["spec-fix: module:<name> 에 entity 있는데 migration 누락 — 재산출 필요"]`.
+- **entity 파일 의무 산출 (Critical, 2026-06-04 사고 방지)** — `<name>.module.ts` 또는 `<name>.repository.ts` 가 `./entities/<X>.entity` 를 import 하면, 대응 entity 파일을 **같은 호출 응답 files 맵에 반드시 포함**한다. entities/ 폴더 통째로 누락하는 사고가 빈번 (관측 사례: 2026-06-04 PR #42 quiz — 3개 entity 누락 → `nest build` TS2307 → 머지해도 빌드 실패).
+  - **자체 검증 절차** (응답 직전 LLM이 수행):
+    1. files 맵에서 `src/modules/<name>/<name>.module.ts` 와 `src/modules/<name>/<name>.repository.ts` 의 `import ... from './entities/X'` 줄 추출
+    2. 각 X마다 `src/modules/<name>/entities/X.entity.ts` 가 files 맵에 있는지 확인
+    3. 누락 발견 시 `todo: ["spec-fix: <name> 모듈 entity 누락: <X.entity.ts>, ..."]` 응답 + 코드 생성 차단
+  - **entity 파일 최소 구조**:
+    ```ts
+    import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+    @Entity('<table_name>')
+    export class <Name> {
+      @PrimaryGeneratedColumn('uuid') id: string;
+      // ... 도메인 필드 (snake_case 컬럼명은 @Column({ name: '...' }) 명시)
+      @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) createdAt: Date;
+      @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' }) updatedAt: Date;
+    }
+    ```
+  - migration의 컬럼명/타입과 entity 의 `@Column` 옵션이 **반드시 일치** (snake_case 컬럼은 `@Column({ name: 'snake_case' })` 명시). 불일치 시 runtime SELECT/INSERT에서 `column "X" does not exist` 발생.
 
 ### `modify:<name>` 산출 규약 (Critical — 필드/엔드포인트 수정)
 
