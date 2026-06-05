@@ -4,12 +4,69 @@
 > 모든 모듈이 따라야 하는 cross-cutting 규약.
 
 ## 1. Bootstrap (`main.ts`)
-필수 설정:
+
+**Critical**: `bootstrap` scope의 최소 `main.ts`는 `app-shell` scope에서 아래 코드로 **전체 덮어쓰기** 한다. 항목 누락 시 Swagger·검증·CORS 모두 동작하지 않음 (관측 사례: PR #58 — Swagger 미노출).
+
+필수 항목:
 - `ValidationPipe`: `{ whitelist: true, forbidNonWhitelisted: true, transform: true }`
-- 전역 prefix: `app.setGlobalPrefix('', { exclude: ['/health'] })` (controller 단위 path로 관리)
-- CORS: origin 허용 목록은 env (`CORS_ORIGINS`, comma-separated).
-- Swagger: `/api-docs`
+- CORS: origin 허용 목록은 env (`CORS_ORIGINS`, comma-separated). 비어있으면 모두 허용 (개발용).
+- **Swagger: `SwaggerModule.setup('api-docs', ...)` — `/api-docs` (UI), `/api-docs-json` (스펙).** `@nestjs/swagger` 의존성 필수.
 - Graceful shutdown: `app.enableShutdownHooks()`
+- 포트: `process.env.PORT ?? 5013` (ECS 컨테이너 포트와 일치)
+
+**`src/main.ts` 정본 (app-shell scope 결과물)**:
+
+```ts
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
+  const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: corsOrigins.length ? corsOrigins : true,
+    credentials: true,
+  });
+
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('backend API')
+    .setDescription('NestJS new-project API')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api-docs', app, document, {
+    jsonDocumentUrl: 'api-docs-json',
+  });
+
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 5013);
+}
+bootstrap();
+```
+
+**검증 체크 (PR 머지 + 배포 후)**:
+1. `curl http://<ALB>:5013/api-docs-json | jq '.paths | keys'` → 등록된 모듈의 경로가 보여야 함
+2. `curl -i http://<ALB>:5013/api-docs` → 200 + Swagger UI HTML
+
+**package.json `dependencies` 필수 항목** (app-shell scope에서 추가):
+- `@nestjs/swagger`
+- `class-validator`, `class-transformer` (ValidationPipe + DTO 데코레이터)
 
 ## 2. 인증 (Authentication)
 - 방식: **JWT (Bearer)**

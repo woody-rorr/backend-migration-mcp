@@ -10,6 +10,12 @@
   - verb: `create`, `add`, `drop`, `alter`, `rename`, `seed`
 - class 이름: 파일명을 PascalCase로 (`CreateUsersTable1716800000000`).
 
+### 1.0 cross-call 중복 방지 (Critical — 위반 시 부팅 실패)
+`publish` scope에서 github_publish.md §2.0에 따라 target 레포의 `src/database/migrations/` 디렉토리를 fetch한 뒤 다음 처리:
+
+1. **같은 테이블을 만드는 migration이 이미 존재하면 신규 파일을 drop** — 파일명에 동일 `<verb>-<target>` (예: `create-follows-table`) 패턴이 있는지 확인. 있으면 accumulated_files에서 제거하고 todo에 `"skipped duplicate migration: <기존파일명>"` 기록. (관측 사례: 2026-06-05 PR #64 — 같은 follows 테이블 생성 마이그 2개 → 두번째 실행 시 "table already exists" 에러)
+2. **timestamp 단조 증가 보장** — 신규 migration timestamp가 기존 max보다 작거나 같으면 `max(existing) + 1` 로 rename. 파일명·클래스명 모두 업데이트.
+
 ### 1.1 한 호출에서 여러 migration 파일 생성 시 규칙 (Critical — 위반 시 migration 실패)
 **같은 timestamp 절대 금지**. 한 scaffold 호출에서 N개 migration 파일을 동시 생성할 때는:
 
