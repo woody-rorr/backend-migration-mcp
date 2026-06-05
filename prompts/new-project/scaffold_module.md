@@ -128,6 +128,20 @@ MCP 는 `npm` 을 실행할 수 없으므로 **`package-lock.json` 은 산출하
 | `delete:<name>` | 모듈 제거 — `src/modules/<name>/` 전체 + `src/app.module.ts` import 라인 제거. 아래 §"`delete:<name>` 산출 규약" 따름. |
 | `publish` | 코드 생성 없음 — 누적 파일을 GitHub MCP로 push + PR. `github_publish.md` 따름. |
 
+### `app-shell` 산출 시 필수 규약 (Critical)
+- **`src/main.ts`는 `06-runtime-rules.md` §1의 "정본 main.ts" 블록을 그대로 사용** — bootstrap의 최소 main.ts를 **완전 덮어쓰기**.
+- 필수 포함 항목 (하나라도 빠지면 응답 차단):
+  1. `useGlobalPipes(new ValidationPipe({ whitelist, forbidNonWhitelisted, transform }))`
+  2. `enableCors({...})` — `CORS_ORIGINS` env 파싱
+  3. `SwaggerModule.setup('api-docs', app, document, { jsonDocumentUrl: 'api-docs-json' })` — `DocumentBuilder` + `createDocument` 포함
+  4. `app.enableShutdownHooks()`
+  5. `app.listen(process.env.PORT ?? 5013)`
+- **자체 검증 절차** (응답 직전 LLM이 수행):
+  1. files 맵의 `src/main.ts` 본문에 `SwaggerModule.setup`, `useGlobalPipes`, `enableCors`, `enableShutdownHooks` 4개 토큰이 **모두** 포함되었는지 확인
+  2. 하나라도 누락 시 `todo: ["spec-fix: app-shell main.ts 필수 항목 누락: <token>"]` 응답 + 코드 생성 차단
+- **bootstrap의 `package.json` `dependencies`에 `@nestjs/swagger`, `class-validator`, `class-transformer` 포함 여부 확인** — 누락이면 todo로 spec-fix 요구.
+- 관측 사례: 2026-06-05 PR #58 — bootstrap의 빈 main.ts가 app-shell에서 덮어쓰기 안 되어 Swagger UI/JSON 모두 404. 머지·배포 후 운영자가 수동 발견.
+
 ### `module:<name>` 산출 시 필수 규약 (Critical)
 - **반드시 `src/app.module.ts`도 같이 산출** — 신규 모듈을 imports에 포함하도록 전체 파일 덮어쓰기. `app_module_integration.md` §1 골격 사용.
 - "수동으로 app.module.ts에 추가하세요" 같은 안내 문구를 응답에 포함하지 않는다. 응답은 코드 + todo(next scope)만.

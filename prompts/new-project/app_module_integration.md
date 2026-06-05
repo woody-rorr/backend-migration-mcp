@@ -4,7 +4,16 @@
 > 사용자에게 "수동으로 추가하세요" 같은 문구를 노출하지 않는다.
 
 ## 1. `src/app.module.ts`
-신규 모듈이 추가될 때마다 이 파일을 통째로 다시 산출한다 (덮어쓰기).
+
+### 1.0 Critical: additive merge only (위반 시 기존 모듈 wipe 사고 재발)
+**기존 레포에 이미 머지된 모듈은 절대 삭제하지 않는다.** 매 `module:<name>` 호출에서 app.module.ts를 새로 산출할 때, 호출자가 `accumulated_modules`로 모든 기존 모듈을 넘겨주지 않을 가능성이 있다. 따라서:
+
+- **`module:<name>` scope**: app.module.ts를 **산출하지 않는다**. 호출자의 누적 정보가 불완전할 수 있으므로 module scope에서는 새 모듈 파일들만 만든다.
+- **`publish` scope**: github_publish.md §2.0에 따라 target 레포의 main에 있는 app.module.ts를 GitHub MCP로 fetch → 신규 모듈만 imports 배열에 **append** → push.
+
+기존 정책(통째 재생성)은 신규 부트스트랩 시점(`app-shell` scope, target 레포가 빈 상태일 때)에만 적용.
+
+### 1.1 포함 규칙 (app-shell scope 또는 publish merge 결과 기준)
 포함 규칙:
 - `imports`: 누적된 모든 feature 모듈 (`<Name>Module`) + 공통(`ConfigModule.forRoot`, `ThrottlerModule`, `TypeOrmModule.forRoot(AppDataSource.options)`)
 - `providers`:
@@ -57,9 +66,9 @@ export class AppModule {}
 | scope | app.module.ts 처리 |
 |---|---|
 | `app-shell` | 위 §1 골격으로 최초 생성 (feature 0개) |
-| `module:<name>` | 누적된 모든 module 목록을 imports 에 포함해 **app.module.ts 재산출** (덮어쓰기) |
+| `module:<name>` | **app.module.ts 산출 안 함** — §1.0 참조. 새 모듈 파일들만 생성. |
 | `auth` | `JwtAuthGuard` provider 추가 (이미 §1 골격에 포함) |
-| `publish` | 변경 없음 (publish 직전 마지막 module 호출에서 이미 정확한 상태) |
+| `publish` | github_publish.md §2.0 — target main의 기존 app.module.ts를 fetch해서 신규 모듈만 append (additive merge). |
 
 ## 4. 누적 상태 유지
 - 호출자(orchestrator 또는 handle_backend_request)는 매 scope 호출 시 직전 호출에서 **이미 push 된 모듈 목록**을 `extra_spec` 또는 `accumulated_modules` 로 주입한다.
