@@ -73,6 +73,31 @@ resources/
 **new-project 도메인**
 - `scaffold_new_project_api` — resources/new-project/*.md 명세만 보고 NestJS 코드 생성. 기존 레거시 코드 미참조.
 
+### `backend` 레포 최소 부트 골격 (Critical)
+
+`bootstrap` scope 호출 응답에는 아래 구조가 **반드시 전부 포함**되어야 한다. `bootstrap` PR만 머지된 시점에도 `npm install && npm run build && npm run start`가 성공해서 빈 NestJS 앱이 떠야 함.
+
+```
+backend/
+├── package.json          # nest scripts + 후속 scope deps 화이트리스트 (scaffold_module.md §4)
+├── tsconfig.json         # strictPropertyInitialization: false (TypeORM 호환)
+├── tsconfig.build.json
+├── nest-cli.json         # { "collection": "@nestjs/schematics", "sourceRoot": "src" }
+├── .env.example
+├── .gitignore            # dist/, node_modules/
+├── deploy/Dockerfile     # lock 부재 fallback + HEALTHCHECK start-period 60s+
+├── .github/workflows/deploy.yml
+└── src/
+    ├── main.ts           # NestFactory.create(AppModule).listen(process.env.PORT ?? 5013)
+    └── app.module.ts     # 빈 @Module({ imports: [], controllers: [], providers: [] })
+```
+
+**왜 `src/main.ts` + `src/app.module.ts`까지 bootstrap에 넣나**: 둘이 빠지면 `nest start`가 `Cannot find module '.../dist/main'`로 실패 → 운영자 로컬 검증 불가 + Docker 빌드 시 entry 부재로 ECS task 무한 재시작 (관측 사례: 2026-06-05).
+
+`app-shell` scope는 이 두 파일을 **덮어쓰기**해서 ValidationPipe / Swagger / 글로벌 prefix / 필터·인터셉터를 추가한다.
+
+상세 규약: `prompts/new-project/scaffold_module.md` §3.4.
+
 ## 포트 정책 (mcp-agents-staging-cluster)
 
 | 포트 | 사용 |
