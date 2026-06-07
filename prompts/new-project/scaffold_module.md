@@ -261,6 +261,47 @@ src/modules/<feature>/
 4. DTO는 `class-validator` 데코레이터로 03-api-contract.md의 §3 표를 충실히 옮긴다.
 5. 다른 모듈의 service를 직접 import 금지. 필요한 경우 `exports` 명시된 것만.
 
+## OpenAPI/Swagger 데코레이터 시그니처 (Critical — 위반 시 TS 컴파일 실패)
+`@nestjs/swagger` 데코레이터 옵션은 아래 화이트리스트만 허용. 환각으로 없는 키 추가 금지.
+
+### `@ApiQuery({ ... })` 허용 키만 (실제 ApiQueryOptions 타입):
+- `name`, `description`, `required`, `deprecated`, `allowEmptyValue`
+- `type`, `enum`, `enumName`, `example`, `examples`
+- `isArray`, `explode`, `style`, `format` ← **여기 NO**
+
+**주의:** `format`, `pattern`, `schema`는 `@ApiQuery`에 안 들어감. UUID 같은 형식 명시는 다음 중 하나로:
+- (a) DTO에 `@IsUUID()` 적용 (권장)
+- (b) `@ApiQuery({ name: 'id', type: String, description: 'UUID v4' })` — type만, format은 빼고
+- (c) `@ApiParam(...)`도 동일 규칙
+
+**올바른 예:**
+```ts
+@ApiQuery({ name: 'postId', required: true, type: String, description: 'Post UUID' })
+@Get() list(@Query('postId', new ParseUUIDPipe()) postId: string) { ... }
+```
+
+**잘못된 예 (관측 사례 2026-06-07 PR #68):**
+```ts
+@ApiQuery({ name: 'postId', required: true, type: String, format: 'uuid' })  // TS2353
+```
+
+### `@ApiParam({ ... })` 허용 키:
+- `name`, `description`, `required`, `deprecated`
+- `type`, `enum`, `enumName`, `example`, `examples`
+- (NO `format`, `schema`)
+
+### `@ApiBody({ ... })` 허용 키:
+- `description`, `required`, `type`, `isArray`, `examples`, `schema` (이건 OK), `enum`
+- (NO `format` 최상위, schema 안에서만)
+
+### `@ApiResponse({ ... })` 허용 키:
+- `status`, `description`, `type`, `isArray`, `schema`, `examples`, `headers`, `links`
+- (NO `format`)
+
+### `@ApiProperty({ ... })` (DTO 필드용)는 OpenAPI Schema 그대로 매핑 → `format`, `example`, `enum`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `nullable` 등 OK.
+
+**검증 룰:** 모든 controller/dto 파일 산출 후, `@Api*({ ... })` 안에 위 허용 키만 있는지 self-check. 어긋나면 해당 키 제거하고 DTO 검증 데코레이터(@IsUUID, @Matches 등)로 대체.
+
 ## UC 명세 → service 코드 매핑 (Critical)
 
 `05-use-cases.md` 의 UC 표가 입력으로 주어진 경우, 아래 매핑을 **기계적으로** 적용한다. 자율 해석 금지.
