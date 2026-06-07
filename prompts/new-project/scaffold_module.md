@@ -8,7 +8,7 @@
 
 | scope | 규약 파일 | 비고 |
 |---|---|---|
-| `bootstrap` | scopes/bootstrap.md | tsconfig/Dockerfile/deps 화이트리스트 + 최소 부트 골격 (main.ts/app.module.ts) |
+| `bootstrap` | scopes/bootstrap.md | tsconfig/Dockerfile/deps 화이트리스트 + 최소 부트 골격. `migrate-runner` 동반 권장 |
 | `app-shell` | scopes/app-shell.md | main.ts 정본 (Swagger/ValidationPipe/CORS/Shutdown) |
 | `database` | scopes/module.md (§database) | 테이블 1개당 migration 1개 |
 | `module:<name>` | scopes/module.md | entity + migration + app.module.ts 동반 의무 |
@@ -17,6 +17,7 @@
 | `health` | scopes/module.md | 단순 모듈 1개 |
 | `modify:<name>` | scopes/modify.md | ALTER 마이그레이션 (CREATE 재산출 금지) |
 | `delete:<name>` | scopes/delete.md | 전체 묶음 삭제 (절반 삭제 금지) |
+| **`migrate-runner`** | **scopes/migrate-runner.md** | **마이그레이션을 앱 부팅에서 분리 (entrypoint.sh + migrate-task-def.json + deploy.yml RunTask)** |
 | `publish` | scopes/publish.md + github_publish.md | 누적 파일 push + PR |
 
 ## §0.5 사전 점검 (모든 scope 첫 단계 — Critical)
@@ -69,6 +70,7 @@ src/modules/<feature>/
   "next: app-shell",
   "next: database (users table)",
   "next: module:users",
+  "next: migrate-runner",
   "next: auth",
   "next: tests:auth"
 ]
